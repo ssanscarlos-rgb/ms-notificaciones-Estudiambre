@@ -1,0 +1,46 @@
+# Compila en cada push a dev/test y en los PR; despliega al App Service solo con push a test.
+# Si Jean configura el despliegue desde el Deployment Center del App Service, este genera su
+# propio workflow: dejá solo uno de los dos para no desplegar dos veces.
+name: ms-notificaciones
+
+on:
+  push:
+    branches: [dev, test]
+  pull_request:
+    branches: [dev, test]
+  workflow_dispatch:
+
+env:
+  PROYECTO: src/MsNotificaciones/MsNotificaciones.csproj
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore ${{ env.PROYECTO }}
+      - run: dotnet build ${{ env.PROYECTO }} -c Release --no-restore
+      - run: dotnet publish ${{ env.PROYECTO }} -c Release --no-build -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: publish
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/test'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: publish
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: publish

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ms-notificaciones · cliente de prueba SignalR</title>
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@10.0.11/dist/browser/signalr.min.js"></script>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 18px; }
+  label { display: block; margin-top: 10px; font-weight: 600; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+  textarea { height: 60px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .fila { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button { padding: 6px 12px; font: inherit; cursor: pointer; }
+  #estado { margin-top: 12px; padding: 6px 10px; border-radius: 4px; background: #eee; }
+  #estado.ok { background: #d8f5dd; } #estado.error { background: #fbe0e0; }
+  ul { list-style: none; padding: 0; } li { border: 1px solid #ddd; border-radius: 4px; padding: 8px; margin: 6px 0; }
+  li small { color: #666; } li.nueva { border-color: #3a7; }
+  pre { background: #f6f6f6; padding: 8px; font-size: 12px; overflow: auto; max-height: 200px; }
+</style>
+</head>
+<body>
+<h1>ms-notificaciones · prueba de tiempo real</h1>
+<p>Abrí esta página servida en <code>http://localhost:3000</code> (por ejemplo <code>npx serve -l 3000 tools</code>):
+  es uno de los orígenes que permite el CORS de APIM. En local contra el servicio directo cualquier origen sirve.</p>
+
+<label>URL base (servicio local o APIM, sin <code>/v1</code>)</label>
+<input id="base" value="http://localhost:5080">
+
+<label>Encabezados extra (JSON). Por APIM: <code>{"Ocp-Apim-Subscription-Key": "..."}</code> si la API lo pide</label>
+<input id="extra" value="{}">
+
+<label>JWT (Authorization: Bearer ...). En local podés generar uno falso con el botón.</label>
+<textarea id="jwt"></textarea>
+<div class="fila">
+  <input id="sub" value="usuario-demo" style="width:200px">
+  <button id="btnFalso">Generar JWT falso con este sub (solo local)</button>
+</div>
+
+<div class="fila">
+  <button id="btnConectar">1. Negociar y conectar</button>
+  <button id="btnEnviar">2. Enviar notificación de prueba (POST)</button>
+  <button id="btnListar">Listar (GET página 0)</button>
+  <button id="btnDesconectar">Desconectar</button>
+</div>
+<div id="estado">Desconectado.</div>
+
+<h2>Recibidas en vivo</h2>
+<ul id="lista"></ul>
+<h2>Última respuesta HTTP</h2>
+<pre id="respuesta">—</pre>
+
+<script>
+const $ = id => document.getElementById(id);
+let conexion = null;
+
+function estado(texto, clase) { $('estado').textContent = texto; $('estado').className = clase || ''; }
+function base() { return $('base').value.replace(/\/+$/, ''); }
+function headers() {
+  const h = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + $('jwt').value.trim() };
+  try { Object.assign(h, JSON.parse($('extra').value || '{}')); } catch { alert('Encabezados extra: JSON inválido'); }
+  return h;
+}
+async function llamar(metodo, ruta, body) {
+  const r = await fetch(base() + ruta, { method: metodo, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  const texto = await r.text();
+  $('respuesta').textContent = `${metodo} ${ruta} → ${r.status}\nX-Correlation-Id: ${r.headers.get('X-Correlation-Id')}\n\n${texto}`;
+  if (!r.ok) throw new Error(`${r.status}: ${texto}`);
+  return texto ? JSON.parse(texto) : null;
+}
+
+$('btnFalso').onclick = () => {
+  const b64 = o => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  $('jwt').value = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ sub: $('sub').value, name: 'Prueba' })}.firma-falsa`;
+};
+
+$('btnConectar').onclick = async () => {
+  try {
+    if (conexion) await conexion.stop();
+    estado('Negociando...');
+    // Igual que hará el frontend: negotiate por APIM y conexión directa a Azure SignalR.
+    // El token dura 1 h; si la conexión se cae después de eso, hay que volver a negociar.
+    const { url, accessToken } = await llamar('POST', '/v1/notificaciones/negotiate');
+    conexion = new signalR.HubConnectionBuilder()
+      .withUrl(url, { accessTokenFactory: () => accessToken })
+      .withAutomaticReconnect()
+      .configureLogging(signalR.LogLevel.Information)
+      .build();
+    conexion.on('notificacion', n => {
+      const li = document.createElement('li');
+      li.className = 'nueva';
+      li.innerHTML = `<b></b><br><span></span><br><small></small>`;
+      li.querySelector('b').textContent = n.titulo;
+      li.querySelector('span').textContent = n.mensaje;
+      li.querySelector('small').textContent = `${n.tipo} · ${new Date(n.fecha).toLocaleString()} · id ${n.id}`;
+      $('lista').prepend(li);
+    });
+    conexion.onreconnecting(() => estado('Reconectando...'));
+    conexion.onreconnected(() => estado('Conectado (reconectado).', 'ok'));
+    conexion.onclose(e => estado('Desconectado' + (e ? ': ' + e.message : '.'), e ? 'error' : ''));
+    await conexion.start();
+    estado('Conectado a Azure SignalR. Esperando notificaciones...', 'ok');
+  } catch (e) { estado('Error: ' + e.message, 'error'); }
+};
+
+$('btnEnviar').onclick = async () => {
+  try {
+    await llamar('POST', '/v1/notificaciones', {
+      tipo: 'PRUEBA', titulo: 'Hola desde el cliente de prueba', mensaje: 'Enviada ' + new Date().toLocaleTimeString()
+    });
+  } catch (e) { estado('Error: ' + e.message, 'error'); }
+};
+$('btnListar').onclick = () => llamar('GET', '/v1/notificaciones?page=0&size=10').catch(e => estado('Error: ' + e.message, 'error'));
+$('btnDesconectar').onclick = async () => { if (conexion) await conexion.stop(); };
+</script>
+</body>
+</html>

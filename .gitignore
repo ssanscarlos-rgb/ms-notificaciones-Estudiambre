@@ -1,0 +1,21 @@
+bin/
+obj/
+publish/
+.vs/
+.vscode/
+.idea/
+*.user
+*.swp
+
+# Secretos locales
+appsettings.Local.json
+.env
+*.pfx
+*.pem
+*.key
+
+# Azurite
+__azurite_db_*
+__blobstorage__/
+__queuestorage__/
+AzuriteConfig
