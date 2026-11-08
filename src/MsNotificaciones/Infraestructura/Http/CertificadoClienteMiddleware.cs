@@ -20,10 +20,18 @@ public sealed class CertificadoClienteMiddleware(
     public const string Header = "X-ARR-ClientCert";
 
     private readonly string? _huellaEsperada = Normalizar(opciones.ClientCertThumbprint);
+    private readonly bool _desactivado = DesactivarConAviso(opciones, logger);
+
+    private static bool DesactivarConAviso(OpcionesServicio opciones, ILogger logger)
+    {
+        if (opciones.RequerirCertificadoCliente) return false;
+        logger.LogWarning("CLIENT_CERT_REQUIRED=false: no se valida el certificado de cliente (plan sin mTLS)");
+        return true;
+    }
 
     public async Task InvokeAsync(HttpContext ctx)
     {
-        if (EsRutaPublica(ctx.Request.Path) || HttpMethods.IsOptions(ctx.Request.Method))
+        if (_desactivado || EsRutaPublica(ctx.Request.Path) || HttpMethods.IsOptions(ctx.Request.Method))
         {
             await next(ctx);
             return;

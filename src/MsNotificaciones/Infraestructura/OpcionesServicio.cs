@@ -12,6 +12,12 @@ public sealed record OpcionesServicio
     public string SignalRHub { get; init; } = "notificaciones";
     public string? ClientCertThumbprint { get; init; }
 
+    /// <summary>
+    /// <c>false</c> solo cuando el App Service está en un plan sin certificados de cliente (F1/D1):
+    /// ahí App Service nunca manda <c>X-ARR-ClientCert</c> y el filtro rechazaría todo.
+    /// </summary>
+    public bool RequerirCertificadoCliente { get; init; } = true;
+
     /// <summary>Intentos antes de mandar un mensaje a la cola <c>{QueueName}-poison</c>.</summary>
     public int MaxIntentos { get; init; } = 5;
 
@@ -23,6 +29,7 @@ public sealed record OpcionesServicio
         SignalRConnectionString = Valor(c, "AZURE_SIGNALR_CONNECTION_STRING"),
         SignalRHub = Valor(c, "SIGNALR_HUB") ?? "notificaciones",
         ClientCertThumbprint = Valor(c, "CLIENT_CERT_THUMBPRINT"),
+        RequerirCertificadoCliente = !string.Equals(Valor(c, "CLIENT_CERT_REQUIRED"), "false", StringComparison.OrdinalIgnoreCase),
         MaxIntentos = int.TryParse(Valor(c, "QUEUE_MAX_INTENTOS"), out var n) && n > 0 ? n : 5,
     };
 

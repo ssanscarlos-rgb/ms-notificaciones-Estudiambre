@@ -99,6 +99,7 @@ En Development sin `CLIENT_CERT_THUMBPRINT` no se exige certificado y CORS queda
 | `STORAGE_CONNECTION_STRING` | secret | — (obligatoria fuera de Development) |
 | `AZURE_SIGNALR_CONNECTION_STRING` | secret | — (sin ella, `negotiate` responde 503) |
 | `CLIENT_CERT_THUMBPRINT` | secret | — (SHA-1; con o sin `:`) |
+| `CLIENT_CERT_REQUIRED` | variable | `true`. Poner `false` solo en un plan F1/D1, que no soporta certificados de cliente |
 | `QUEUE_NAME` | variable | `eventos-presupuesto` |
 | `TABLE_NAME` | variable | `notificaciones` |
 | `SIGNALR_HUB` | variable | `notificaciones` |
@@ -109,8 +110,8 @@ Para el workflow (Environment `test` de GitHub): secret `AZURE_WEBAPP_PUBLISH_PR
 ## Checklist de Azure
 
 - App Service Linux, pila **.NET 10** (.NET 8 deja de tener soporte el 10 nov 2026).
-- **Always On** activado (plan B1 o superior). En el plan Free el App Service se duerme y el consumidor de la cola deja de leer hasta que llegue una petición HTTP.
-- *Incoming client certificates* = **Require**, con *exclusion paths* `/health;/swagger`.
+- Plan actual: **F1** (compartido). En F1 no hay *Always On*: el App Service se duerme tras ~20 min sin peticiones y el consumidor deja de leer la cola hasta la siguiente petición HTTP (los mensajes no se pierden, quedan en la cola). Antes de una demo, llamar a `/health`.
+- F1 tampoco soporta certificados de cliente: se despliega con `CLIENT_CERT_REQUIRED=false`. En un plan B1 o superior: *Incoming client certificates* = **Require**, *exclusion paths* `/health;/swagger`, `CLIENT_CERT_THUMBPRINT` con la huella del certificado de APIM y sin `CLIENT_CERT_REQUIRED`.
 - App settings con las variables de arriba.
 - Azure SignalR (plan Free) con **Service mode = Serverless**.
 - En APIM, operaciones para los cuatro endpoints, incluido `POST /notificaciones/negotiate`.
