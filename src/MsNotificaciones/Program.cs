@@ -41,6 +41,7 @@ app.UseStatusCodePages(async contexto =>
 });
 if (app.Environment.IsDevelopment()) app.UseCors();
 app.UseMiddleware<CertificadoClienteMiddleware>();
+app.UseMiddleware<SecretoApimMiddleware>();
 app.UseDocumentacion();
 
 app.MapGet("/health", () => Results.Ok(new { status = "UP", servicio = "ms-notificaciones" }))

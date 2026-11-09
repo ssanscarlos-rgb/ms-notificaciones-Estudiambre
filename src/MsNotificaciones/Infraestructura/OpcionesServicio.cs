@@ -18,6 +18,9 @@ public sealed record OpcionesServicio
     /// </summary>
     public bool RequerirCertificadoCliente { get; init; } = true;
 
+    /// <summary>Secreto que APIM manda en <c>X-Apim-Secret</c>. Si es null, no se exige.</summary>
+    public string? ApimSharedSecret { get; init; }
+
     /// <summary>Intentos antes de mandar un mensaje a la cola <c>{QueueName}-poison</c>.</summary>
     public int MaxIntentos { get; init; } = 5;
 
@@ -29,7 +32,8 @@ public sealed record OpcionesServicio
         SignalRConnectionString = Valor(c, "AZURE_SIGNALR_CONNECTION_STRING"),
         SignalRHub = Valor(c, "SIGNALR_HUB") ?? "notificaciones",
         ClientCertThumbprint = Valor(c, "CLIENT_CERT_THUMBPRINT"),
-        RequerirCertificadoCliente = !string.Equals(Valor(c, "CLIENT_CERT_REQUIRED"), "false", StringComparison.OrdinalIgnoreCase),
+        ApimSharedSecret = Valor(c, "APIM_SHARED_SECRET"),
+        RequerirCertificadoCliente =!string.Equals(Valor(c, "CLIENT_CERT_REQUIRED"), "false", StringComparison.OrdinalIgnoreCase),
         MaxIntentos = int.TryParse(Valor(c, "QUEUE_MAX_INTENTOS"), out var n) && n > 0 ? n : 5,
     };
 
