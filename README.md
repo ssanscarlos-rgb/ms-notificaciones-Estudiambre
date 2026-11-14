@@ -56,6 +56,75 @@ Cola `eventos-presupuesto` en la misma Storage Account. Mensaje en **JSON plano*
 
 `tools/cliente-signalr.html` hace exactamente esto, para probar sin el frontend.
 
+## Tipos de notificación
+
+| `tipo` | Origen | `categoria` | Texto |
+|---|---|---|---|
+| `PRESUPUESTO_80` | Evento de Gastos y Plan en la cola | Sí | "Vas por el 83% en Comida" |
+| `PRESUPUESTO_100` | Evento de Gastos y Plan en la cola | Sí | "Presupuesto de Comida agotado" |
+| `AVISO` | `POST /v1/notificaciones` con `tipo: "AVISO"` | Opcional | Título y mensaje libres (avisos generales) |
+| `GENERAL` | `POST` sin `tipo` | Opcional | Título y mensaje libres |
+
+El `POST` acepta cualquier `tipo`; los que el frontend muestra con ícono propio se acuerdan con su dueño.
+
+## Flujo completo (diagrama de secuencia)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant F as Frontend (React)
+    participant A as APIM
+    participant G as ms-gastos-plan
+    participant Q as Azure Queue
+    participant N as ms-notificaciones
+    participant T as Table Storage
+    participant S as Azure SignalR
+
+    Note over F,S: Al iniciar sesión: conexión en tiempo real
+    F->>A: POST /notificaciones/v1/notificaciones/negotiate (JWT de Google)
+    A->>A: validate-jwt, CORS, X-Correlation-Id, X-Apim-Secret
+    A->>N: POST /v1/notificaciones/negotiate
+    N->>S: NegotiateAsync(UserId = sub)
+    N-->>F: {url, accessToken}
+    F->>S: WebSocket directo (APIM Consumption no deja pasar WebSocket)
+
+    Note over F,S: El usuario registra un gasto que cruza el 80 %
+    F->>A: POST /gastos (JWT)
+    A->>G: POST /v1/gastos
+    G->>Q: Mensaje {usuarioId, tipo: PRESUPUESTO_80, categoria, porcentaje, fecha, correlationId}
+    G-->>F: 201 (el gasto no espera a la notificación)
+    N->>Q: ReceiveMessages (sondeo cada 0,5-2 s, visibilidad 60 s)
+    N->>T: AddEntity (PartitionKey = sub, RowKey = fecha invertida + id)
+    N->>S: Clients.User(sub).SendAsync("notificacion", {...})
+    N->>Q: DeleteMessage
+    S-->>F: Evento "notificacion" → entra arriba en la campana
+```
+
+Si algo falla antes de borrar el mensaje, reaparece a los 60 s y se reintenta; como el id es el `MessageId`, el reintento choca con la entidad ya guardada (409) y no se duplica. Tras 5 intentos, o si el JSON es inválido, va a `eventos-presupuesto-poison`.
+
+## Table Storage: por qué esas claves
+
+Tabla `notificaciones`. Cada entidad:
+
+| Columna | Ejemplo | Para qué |
+|---|---|---|
+| `PartitionKey` | `116587395239100828200` (el `sub` de Google) | Todas las notificaciones de un usuario quedan juntas en una partición. Toda consulta filtra por ella, así que es rápida y un usuario nunca lee las de otro |
+| `RowKey` | `9223370242259...` + `_` + id | `long.MaxValue − fecha` con 19 dígitos. Table Storage ordena por `RowKey` de forma ascendente, así que la más nueva (fecha mayor → número menor) sale primero, sin ordenar en memoria. El `_id` final la hace única aunque dos lleguen en el mismo milisegundo |
+| `Id`, `Tipo`, `Titulo`, `Mensaje`, `Leida`, `Fecha`, `Categoria` | | Los datos de la notificación. `Leida` se cambia con un *merge* de esa sola columna |
+
+- **Paginación:** se recorre la partición ya ordenada, se cuentan todas (para `totalElements`) y se toman las de la página. Con `?leida=false`, el filtro lo resuelve Table Storage y los totales cuentan solo las sin leer.
+- **Idempotencia:** la que nace de la cola usa como id el `MessageId` del mensaje: mismo mensaje → mismo `RowKey` → el segundo intento da 409 y se ignora.
+- **Por qué Table Storage y no otra base:** el acceso es siempre "las de este usuario, de la más nueva a la más vieja", que es exactamente partición + orden por `RowKey`. No hay joins ni transacciones entre entidades. Es barato, sin esquema, y está en la misma Storage Account que la cola.
+
+## Por qué .NET (tecnologías diversas)
+
+El enunciado pide tecnologías distintas entre microservicios: Gastos y Plan usa Spring Boot (Java), Perfil y Precios usan Node/Express, y Notificaciones usa .NET 10. Para este servicio en particular:
+
+- **SDK oficiales de Microsoft** para las tres piezas de Azure que usa: `Azure.Storage.Queues`, `Azure.Data.Tables` y `Microsoft.Azure.SignalR.Management`, que es el que genera el `negotiate` y envía al usuario en modo Serverless.
+- **API y consumidor en el mismo proceso:** el consumidor de la cola es un `BackgroundService` que corre junto a la API REST en el mismo App Service, sin otro servicio ni Azure Functions.
+- **Lo transversal sin librerías extra:** Minimal APIs, logs JSON con scopes (para el `correlationId`) y la lectura del certificado de cliente vienen en el framework.
+- **.NET 10 es LTS**, con soporte hasta noviembre de 2028.
+
 ## Estructura (puertos y adaptadores)
 
 ```
