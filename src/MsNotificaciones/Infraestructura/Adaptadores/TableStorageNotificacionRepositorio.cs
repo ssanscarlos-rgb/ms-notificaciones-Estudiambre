@@ -24,6 +24,7 @@ public sealed class NotificacionEntity : ITableEntity
     public string Mensaje { get; set; } = "";
     public bool Leida { get; set; }
     public long Fecha { get; set; }
+    public string? Categoria { get; set; }
 
     public static string CrearRowKey(long fecha, string id) => $"{long.MaxValue - fecha:D19}_{id}";
 
@@ -37,9 +38,10 @@ public sealed class NotificacionEntity : ITableEntity
         Mensaje = n.Mensaje,
         Leida = n.Leida,
         Fecha = n.Fecha,
+        Categoria = n.Categoria,
     };
 
-    public Notificacion ADominio() => new(Id, PartitionKey, Tipo, Titulo, Mensaje, Leida, Fecha);
+    public Notificacion ADominio() => new(Id, PartitionKey, Tipo, Titulo, Mensaje, Leida, Fecha, Categoria);
 }
 
 public sealed class TableStorageNotificacionRepositorio(TableClient tabla) : INotificacionRepositorio
@@ -76,10 +78,13 @@ public sealed class TableStorageNotificacionRepositorio(TableClient tabla) : INo
     /// cumple el formato <c>totalElements/totalPages</c>. Para volúmenes grandes habría que pasar
     /// a tokens de continuación y dejar de devolver el total exacto.
     /// </summary>
-    public async Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, CancellationToken ct)
+    public async Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, bool? leida, CancellationToken ct)
     {
         await InicializarAsync(ct);
-        var filtro = TableClient.CreateQueryFilter($"PartitionKey eq {usuarioId}");
+        // El filtro por Leida lo resuelve Table Storage, así totalElements cuenta solo las filtradas.
+        var filtro = leida is { } valor
+            ? TableClient.CreateQueryFilter($"PartitionKey eq {usuarioId} and Leida eq {valor}")
+            : TableClient.CreateQueryFilter($"PartitionKey eq {usuarioId}");
         var desde = (long)page * size;
         var contenido = new List<Notificacion>(size);
         long total = 0;
@@ -112,5 +117,26 @@ public sealed class TableStorageNotificacionRepositorio(TableClient tabla) : INo
         }
 
         return null;
+    }
+
+    public async Task<bool> EliminarAsync(string usuarioId, string id, CancellationToken ct)
+    {
+        await InicializarAsync(ct);
+        var filtro = TableClient.CreateQueryFilter($"PartitionKey eq {usuarioId} and Id eq {id}");
+
+        await foreach (var e in _tabla.QueryAsync<NotificacionEntity>(filtro, maxPerPage: 1, cancellationToken: ct))
+        {
+            try
+            {
+                await _tabla.DeleteEntityAsync(e.PartitionKey, e.RowKey, ETag.All, ct);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                return false; // Otra petición la borró justo antes.
+            }
+            return true;
+        }
+
+        return false;
     }
 }

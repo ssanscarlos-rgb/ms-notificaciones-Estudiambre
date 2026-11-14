@@ -19,13 +19,14 @@ Todos bajo `/v1`, con `Authorization: Bearer <Google JWT>` (APIM valida la firma
 
 | Método | Ruta | Respuesta |
 |---|---|---|
-| GET | `/notificaciones?page=0&size=10` | `{content, page, size, totalElements, totalPages}`, de la más nueva a la más vieja. `size` 1–50 |
-| POST | `/notificaciones` | Body `{tipo?, titulo, mensaje}` → 201 con la notificación. También la envía en vivo (útil para Postman) |
+| GET | `/notificaciones?page=0&size=10[&leida=false]` | `{content, page, size, totalElements, totalPages}`, de la más nueva a la más vieja. `size` 1–50. Con `leida=false` (o `true`) filtra, y los totales cuentan solo las filtradas |
+| POST | `/notificaciones` | Body `{tipo?, titulo, mensaje, categoria?}` → 201 con la notificación. También la envía en vivo (útil para Postman) |
 | PATCH | `/notificaciones/{id}` | Body `{"leida": true}` → 200 con la notificación. Otro campo → 400. De otro usuario → 404 |
+| DELETE | `/notificaciones/{id}` | 204 siempre (idempotente: si no existe o es de otro usuario, no se borra nada y no se revela si existe) |
 | POST | `/notificaciones/negotiate` | `{url, accessToken}` para conectarse a Azure SignalR. 503 si no hay SignalR configurado |
 | GET | `/health`, `/swagger` | Sin autenticación ni certificado |
 
-Notificación: `{id, tipo, titulo, mensaje, leida, fecha}` (fecha en Epoch ms, UTC).
+Notificación: `{id, tipo, titulo, mensaje, leida, fecha, categoria?}` (fecha en Epoch ms, UTC). `categoria` viene en las que nacen de un evento de presupuesto (la categoría del plan); si no hay, el campo no se envía.
 Errores: `{status, message, correlationId}`. Toda respuesta trae `X-Correlation-Id`.
 
 ## Contrato con Gastos y Plan (evento en la cola)
@@ -48,7 +49,7 @@ Cola `eventos-presupuesto` en la misma Storage Account. Mensaje en **JSON plano*
    const c = new signalR.HubConnectionBuilder()
      .withUrl(url, { accessTokenFactory: () => accessToken })
      .withAutomaticReconnect().build();
-   c.on('notificacion', n => prepend(n)); // n = {id, tipo, titulo, mensaje, leida, fecha}
+   c.on('notificacion', n => prepend(n)); // n = {id, tipo, titulo, mensaje, leida, fecha, categoria?}
    await c.start();
    ```
 3. El token dura 1 hora: si la conexión se cierra después de eso, volver a negociar.

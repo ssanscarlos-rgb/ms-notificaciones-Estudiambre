@@ -25,6 +25,9 @@ public static class NotificacionesEndpoints
             .Produces<ErrorRespuesta>(400)
             .Produces<ErrorRespuesta>(404);
 
+        grupo.MapDelete("/{id}", Eliminar)
+            .Produces(204);
+
         grupo.MapPost("/negotiate", Negociar)
             .Produces<NegociacionDto>()
             .Produces<ErrorRespuesta>(503);
@@ -34,16 +37,17 @@ public static class NotificacionesEndpoints
 
     private static async Task<IResult> Listar(
         HttpContext ctx, NotificacionService servicio,
-        [FromQuery] int? page, [FromQuery] int? size, CancellationToken ct)
+        [FromQuery] int? page, [FromQuery] int? size, [FromQuery] bool? leida, CancellationToken ct)
     {
-        var pagina = await servicio.ListarAsync(ctx.UsuarioId(), page ?? 0, size ?? 10, ct);
+        // ?leida=false → solo sin leer (filtro "Sin leer"); los totales cuentan solo esas.
+        var pagina = await servicio.ListarAsync(ctx.UsuarioId(), page ?? 0, size ?? 10, leida, ct);
         return Results.Ok(pagina.Map(NotificacionDto.Desde));
     }
 
     private static async Task<IResult> Crear(
         HttpContext ctx, NotificacionService servicio, [FromBody] CrearNotificacionRequest body, CancellationToken ct)
     {
-        var n = await servicio.CrearAsync(ctx.UsuarioId(), body.Tipo, body.Titulo, body.Mensaje, ct);
+        var n = await servicio.CrearAsync(ctx.UsuarioId(), body.Tipo, body.Titulo, body.Mensaje, body.Categoria, ct);
         return Results.Created($"/v1/notificaciones/{n.Id}", NotificacionDto.Desde(n));
     }
 
@@ -57,6 +61,13 @@ public static class NotificacionesEndpoints
         return n is null
             ? Errores.Resultado(ctx, 404, "Notificación no encontrada.")
             : Results.Ok(NotificacionDto.Desde(n));
+    }
+
+    /// <summary>204 siempre: borrar algo que no existe (o ajeno) no es error ni revela si existe.</summary>
+    private static async Task<IResult> Eliminar(HttpContext ctx, NotificacionService servicio, string id, CancellationToken ct)
+    {
+        await servicio.EliminarAsync(ctx.UsuarioId(), id, ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> Negociar(HttpContext ctx, NotificacionService servicio, CancellationToken ct)

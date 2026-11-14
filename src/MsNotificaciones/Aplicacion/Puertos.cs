@@ -8,11 +8,17 @@ public interface INotificacionRepositorio
     /// <summary>Guarda la notificación. Devuelve <c>false</c> si ya existía (mensaje reprocesado).</summary>
     Task<bool> GuardarAsync(Notificacion notificacion, CancellationToken ct);
 
-    /// <summary>Página <paramref name="page"/> (base 0) del usuario, de la más nueva a la más vieja.</summary>
-    Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, CancellationToken ct);
+    /// <summary>
+    /// Página <paramref name="page"/> (base 0) del usuario, de la más nueva a la más vieja.
+    /// Con <paramref name="leida"/> filtra (y los totales cuentan solo las filtradas).
+    /// </summary>
+    Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, bool? leida, CancellationToken ct);
 
     /// <summary>Marca como leída. Devuelve <c>null</c> si no existe o es de otro usuario.</summary>
     Task<Notificacion?> MarcarLeidaAsync(string usuarioId, string id, CancellationToken ct);
+
+    /// <summary>Elimina. Devuelve <c>false</c> si no existía o es de otro usuario.</summary>
+    Task<bool> EliminarAsync(string usuarioId, string id, CancellationToken ct);
 }
 
 /// <summary>Puerto de envío en tiempo real. Adaptador real: Azure SignalR (modo Serverless).</summary>

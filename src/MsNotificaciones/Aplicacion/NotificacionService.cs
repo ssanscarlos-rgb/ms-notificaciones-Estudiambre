@@ -29,12 +29,13 @@ public sealed class NotificacionService(
     }
 
     /// <summary>Crea una notificación a mano (POST /notificaciones, útil para Postman y pruebas).</summary>
-    public async Task<Notificacion> CrearAsync(string usuarioId, string? tipo, string? titulo, string? mensaje, CancellationToken ct)
+    public async Task<Notificacion> CrearAsync(string usuarioId, string? tipo, string? titulo, string? mensaje, string? categoria, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(titulo)) throw new SolicitudInvalidaException("El campo 'titulo' es obligatorio.");
         if (string.IsNullOrWhiteSpace(mensaje)) throw new SolicitudInvalidaException("El campo 'mensaje' es obligatorio.");
         if (titulo.Length > 120) throw new SolicitudInvalidaException("'titulo' admite hasta 120 caracteres.");
         if (mensaje.Length > 500) throw new SolicitudInvalidaException("'mensaje' admite hasta 500 caracteres.");
+        if (categoria?.Length > 60) throw new SolicitudInvalidaException("'categoria' admite hasta 60 caracteres.");
 
         var notificacion = new Notificacion(
             Guid.NewGuid().ToString("N"),
@@ -43,22 +44,30 @@ public sealed class NotificacionService(
             titulo.Trim(),
             mensaje.Trim(),
             Leida: false,
-            AhoraMs());
+            AhoraMs(),
+            string.IsNullOrWhiteSpace(categoria) ? null : categoria.Trim());
 
         await repositorio.GuardarAsync(notificacion, ct);
         await EmitirAsync(notificacion, ct);
         return notificacion;
     }
 
-    public Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, CancellationToken ct)
+    public Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, bool? leida, CancellationToken ct)
     {
         if (page < 0) throw new SolicitudInvalidaException("'page' debe ser 0 o mayor.");
         if (size is < 1 or > TamanoMaximo) throw new SolicitudInvalidaException($"'size' debe estar entre 1 y {TamanoMaximo}.");
-        return repositorio.ListarAsync(usuarioId, page, size, ct);
+        return repositorio.ListarAsync(usuarioId, page, size, leida, ct);
     }
 
     public Task<Notificacion?> MarcarLeidaAsync(string usuarioId, string id, CancellationToken ct) =>
         repositorio.MarcarLeidaAsync(usuarioId, id, ct);
+
+    /// <summary>Idempotente: si no existe (o ya se borró), no es error.</summary>
+    public async Task EliminarAsync(string usuarioId, string id, CancellationToken ct)
+    {
+        if (!await repositorio.EliminarAsync(usuarioId, id, ct))
+            logger.LogInformation("DELETE de la notificación {Id}: no existía para este usuario", id);
+    }
 
     public Task<Negociacion> NegociarAsync(string usuarioId, CancellationToken ct)
     {

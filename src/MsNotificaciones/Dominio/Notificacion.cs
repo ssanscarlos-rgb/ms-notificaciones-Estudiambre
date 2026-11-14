@@ -10,7 +10,8 @@ public sealed record Notificacion(
     string Titulo,
     string Mensaje,
     bool Leida,
-    long Fecha)
+    long Fecha,
+    string? Categoria = null)
 {
     /// <summary>
     /// Arma la notificación que ve el usuario a partir del evento que publica Gastos y Plan.
@@ -31,6 +32,6 @@ public sealed record Notificacion(
             _ => throw new ArgumentException($"Tipo de evento no soportado: {evento.Tipo}", nameof(evento)),
         };
 
-        return new Notificacion(id, evento.UsuarioId, evento.Tipo, titulo, mensaje, Leida: false, evento.Fecha);
+        return new Notificacion(id, evento.UsuarioId, evento.Tipo, titulo, mensaje, Leida: false, evento.Fecha, evento.Categoria);
     }
 }

@@ -1,0 +1,333 @@
+{
+  "info": {
+    "_postman_id": "1e3c6f08-4188-4b73-9e26-957ddf3c7f09",
+    "name": "ms-notificaciones (EstudiAmbre)",
+    "description": "Pruebas de ms-notificaciones. Correr en orden (Run collection). Antes, poner en las variables de la colección: token = ID token de Google (sin 'Bearer'), sacado del frontend → DevTools → Network → header Authorization; dura 1 hora.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://apimproyectoestudiambre.azure-api.net/notificaciones/v1"
+    },
+    {
+      "key": "directUrl",
+      "value": "https://<tu-app>.azurewebsites.net/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "notifId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Notificaciones (por APIM)",
+      "item": [
+        {
+          "name": "1. Crear notificación (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notificaciones",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PRUEBA\",\n  \"titulo\": \"Prueba desde Postman\",\n  \"mensaje\": \"Notificación creada por la colección\",\n  \"categoria\": \"Comida\"\n}"
+            },
+            "description": "Crea una notificación para el usuario del token y la envía en vivo por SignalR. Guarda el id en {{notifId}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "const n = pm.response.json();",
+                  "pm.test(\"Trae {id, tipo, titulo, mensaje, leida, fecha, categoria}\", () => {",
+                  "  pm.expect(n).to.include.keys(\"id\", \"tipo\", \"titulo\", \"mensaje\", \"leida\", \"fecha\", \"categoria\");",
+                  "  pm.expect(n.leida).to.eql(false);",
+                  "  pm.expect(n.categoria).to.eql(\"Comida\");",
+                  "});",
+                  "pm.test(\"fecha en Epoch milisegundos\", () => pm.expect(n.fecha).to.be.above(1e12));",
+                  "pm.collectionVariables.set(\"notifId\", n.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Listar paginado (GET page=0&size=10)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones?page=0&size=10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"Formato de paginación del curso\", () => {",
+                  "  pm.expect(p).to.include.keys(\"content\", \"page\", \"size\", \"totalElements\", \"totalPages\");",
+                  "  pm.expect(p.page).to.eql(0);",
+                  "  pm.expect(p.size).to.eql(10);",
+                  "  pm.expect(p.content.length).to.be.at.most(10);",
+                  "  pm.expect(p.totalPages).to.eql(Math.ceil(p.totalElements / 10));",
+                  "});",
+                  "pm.test(\"Ordenadas de la más nueva a la más vieja\", () => {",
+                  "  for (let i = 1; i < p.content.length; i++) pm.expect(p.content[i - 1].fecha).to.be.at.least(p.content[i].fecha);",
+                  "});",
+                  "pm.test(\"Incluye la recién creada\", () => pm.expect(p.content.map(n => n.id)).to.include(pm.collectionVariables.get(\"notifId\")));",
+                  "pm.test(\"Devuelve X-Correlation-Id\", () => pm.expect(pm.response.headers.has(\"X-Correlation-Id\")).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Listar solo sin leer (GET leida=false)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones?page=0&size=10&leida=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"Todas tienen leida = false\", () => p.content.forEach(n => pm.expect(n.leida).to.eql(false)));",
+                  "pm.test(\"totalPages calculado sobre las filtradas\", () => pm.expect(p.totalPages).to.eql(Math.ceil(p.totalElements / p.size)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Marcar como leída (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notificaciones/{{notifId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leida\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Queda leida = true\", () => pm.expect(pm.response.json().leida).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. PATCH con un campo no permitido → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notificaciones/{{notifId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leida\": true,\n  \"titulo\": \"no se puede cambiar\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 Bad Request\", () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test(\"Error con formato común {status, message, correlationId}\", () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property(\"message\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Negociar SignalR (POST negotiate)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones/negotiate",
+            "description": "Devuelve la URL del hub de Azure SignalR y un token firmado para el usuario (sub). El navegador se conecta con eso directo a Azure SignalR."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test(\"Trae {url, accessToken} de Azure SignalR\", () => {",
+                  "  pm.expect(r.url).to.include(\"service.signalr.net\");",
+                  "  pm.expect(r.url).to.include(\"hub=notificaciones\");",
+                  "  pm.expect(r.accessToken.split(\".\").length).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Eliminar (DELETE)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones/{{notifId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"204 No Content\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Ya no aparece en el listado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones?page=0&size=50"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"La eliminada no está\", () => pm.expect(pm.response.json().content.map(n => n.id)).to.not.include(pm.collectionVariables.get(\"notifId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Eliminar de nuevo → 204 (idempotente)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones/{{notifId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"204 aunque ya no exista\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Seguridad",
+      "item": [
+        {
+          "name": "Sin token → 401 (validate-jwt de APIM)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "APIM rechaza la petición antes de llegar al microservicio."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Directo al App Service, sin APIM → 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{directUrl}}/notificaciones",
+            "description": "Llamada directa al App Service. Como no trae el header secreto que agrega APIM (X-Apim-Secret), el microservicio responde 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden: solo se entra por APIM\", () => pm.response.to.have.status(403));",
+                  "",
+                  "pm.test(\"Error con formato común {status, message, correlationId}\", () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property(\"message\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

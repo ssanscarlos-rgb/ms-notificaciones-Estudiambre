@@ -19,11 +19,11 @@ public sealed class RepositorioEnMemoria : INotificacionRepositorio
         }
     }
 
-    public Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, CancellationToken ct)
+    public Task<Pagina<Notificacion>> ListarAsync(string usuarioId, int page, int size, bool? leida, CancellationToken ct)
     {
         lock (_lock)
         {
-            var delUsuario = _datos.Where(x => x.UsuarioId == usuarioId)
+            var delUsuario = _datos.Where(x => x.UsuarioId == usuarioId && (leida is null || x.Leida == leida))
                 .OrderByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList();
             var contenido = delUsuario.Skip(page * size).Take(size).ToList();
             return Task.FromResult(Pagina<Notificacion>.Crear(contenido, page, size, delUsuario.Count));
@@ -38,6 +38,14 @@ public sealed class RepositorioEnMemoria : INotificacionRepositorio
             if (i < 0) return Task.FromResult<Notificacion?>(null);
             _datos[i] = _datos[i] with { Leida = true };
             return Task.FromResult<Notificacion?>(_datos[i]);
+        }
+    }
+
+    public Task<bool> EliminarAsync(string usuarioId, string id, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(_datos.RemoveAll(x => x.UsuarioId == usuarioId && x.Id == id) > 0);
         }
     }
 }
