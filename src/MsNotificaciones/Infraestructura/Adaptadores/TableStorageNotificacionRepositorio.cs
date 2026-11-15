@@ -25,6 +25,7 @@ public sealed class NotificacionEntity : ITableEntity
     public bool Leida { get; set; }
     public long Fecha { get; set; }
     public string? Categoria { get; set; }
+    public string? Ruta { get; set; }
 
     public static string CrearRowKey(long fecha, string id) => $"{long.MaxValue - fecha:D19}_{id}";
 
@@ -39,9 +40,10 @@ public sealed class NotificacionEntity : ITableEntity
         Leida = n.Leida,
         Fecha = n.Fecha,
         Categoria = n.Categoria,
+        Ruta = n.Ruta,
     };
 
-    public Notificacion ADominio() => new(Id, PartitionKey, Tipo, Titulo, Mensaje, Leida, Fecha, Categoria);
+    public Notificacion ADominio() => new(Id, PartitionKey, Tipo, Titulo, Mensaje, Leida, Fecha, Categoria, Ruta);
 }
 
 public sealed class TableStorageNotificacionRepositorio(TableClient tabla) : INotificacionRepositorio

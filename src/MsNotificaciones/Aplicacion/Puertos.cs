@@ -35,6 +35,20 @@ public interface INotificadorTiempoReal
 
 public sealed record Negociacion(string Url, string AccessToken);
 
+/// <summary>Última vez que cada usuario abrió la app. Adaptador real: Table Storage.</summary>
+public interface IActividadRepositorio
+{
+    /// <summary>Registra que el usuario entró ahora. Devuelve <c>true</c> si es la primera vez (usuario nuevo).</summary>
+    Task<bool> RegistrarAsync(string usuarioId, long ahoraMs, CancellationToken ct);
+
+    Task<IReadOnlyList<ActividadUsuario>> ListarAsync(CancellationToken ct);
+
+    /// <summary>Guarda hasta qué nivel de inactividad ya se le avisó (para no repetir).</summary>
+    Task MarcarNivelInactividadAsync(string usuarioId, int nivel, CancellationToken ct);
+}
+
+public sealed record ActividadUsuario(string UsuarioId, long UltimaActividad, int NivelInactividad);
+
 /// <summary>Puerto de persistencia de suscripciones push. Adaptador real: Table Storage.</summary>
 public interface ISuscripcionesPushRepositorio
 {

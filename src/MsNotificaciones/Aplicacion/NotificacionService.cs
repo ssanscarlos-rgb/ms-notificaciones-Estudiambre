@@ -9,6 +9,7 @@ public sealed class NotificacionService(
     INotificacionRepositorio repositorio,
     INotificadorTiempoReal notificador,
     ISuscripcionesPushRepositorio suscripciones,
+    IActividadRepositorio actividad,
     IEnviadorPush push,
     OpcionesPush opcionesPush,
     TimeProvider tiempo,
@@ -29,12 +30,56 @@ public sealed class NotificacionService(
     public async Task<Notificacion> ProcesarEventoAsync(EventoPresupuesto evento, string idMensaje, CancellationToken ct)
     {
         var notificacion = Notificacion.DesdeEvento(evento, idMensaje);
-        var esNueva = await repositorio.GuardarAsync(notificacion, ct);
-        if (esNueva)
-            await EmitirAsync(notificacion, ct);
-        else
+        if (!await EmitirSiNuevaAsync(notificacion, ct))
             logger.LogInformation("Mensaje {IdMensaje} ya procesado; no se repite la notificación", idMensaje);
         return notificacion;
+    }
+
+    /// <summary>
+    /// Cambio de precio (lo publicaría Precios). Con <c>usuarioId</c> va a ese usuario; sin él, a todos
+    /// los usuarios conocidos. El id es el del mensaje, así que reprocesarlo no duplica.
+    /// </summary>
+    public async Task<int> ProcesarEventoPrecioAsync(EventoPrecio evento, string idMensaje, CancellationToken ct)
+    {
+        IEnumerable<string> destinatarios = evento.UsuarioId is { } uno
+            ? [uno]
+            : (await actividad.ListarAsync(ct)).Select(u => u.UsuarioId);
+        var enviadas = 0;
+        foreach (var usuarioId in destinatarios)
+            if (await EmitirSiNuevaAsync(Notificacion.DesdePrecio(evento, idMensaje, usuarioId), ct)) enviadas++;
+        return enviadas;
+    }
+
+    /// <summary>
+    /// Guarda y entrega (SignalR + push) solo si es nueva. Con ids deterministas (mismo evento, mismo
+    /// usuario, mismo día) esto evita duplicados aunque una tarea corra dos veces.
+    /// </summary>
+    public async Task<bool> EmitirSiNuevaAsync(Notificacion notificacion, CancellationToken ct)
+    {
+        if (!await repositorio.GuardarAsync(notificacion, ct)) return false;
+        await EmitirAsync(notificacion, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// El usuario abrió la app (lo llaman negotiate y la primera página de la campana). La primera vez
+    /// recibe la bienvenida. Si falla, no afecta la petición del usuario.
+    /// </summary>
+    public async Task RegistrarActividadAsync(string usuarioId, CancellationToken ct)
+    {
+        try
+        {
+            if (await actividad.RegistrarAsync(usuarioId, AhoraMs(), ct))
+            {
+                await EmitirSiNuevaAsync(Notificacion.Desde(Bienvenida.Texto, Bienvenida.Id, usuarioId,
+                    TiposNotificacion.Bienvenida, AhoraMs()), ct);
+                logger.LogInformation("Usuario nuevo: bienvenida enviada");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo registrar la actividad del usuario");
+        }
     }
 
     /// <summary>Crea una notificación a mano (POST /notificaciones, útil para Postman y pruebas).</summary>
@@ -132,7 +177,7 @@ public sealed class NotificacionService(
 
             var payload = JsonSerializer.SerializeToUtf8Bytes(new
             {
-                n.Id, n.Tipo, n.Titulo, n.Mensaje, n.Categoria, n.Fecha,
+                n.Id, n.Tipo, n.Titulo, n.Mensaje, n.Categoria, n.Ruta, n.Fecha,
             }, Json);
 
             foreach (var s in destinos)

@@ -85,12 +85,53 @@ rm vapid.pem
 
 | `tipo` | Origen | `categoria` | Texto |
 |---|---|---|---|
-| `PRESUPUESTO_80` | Evento de Gastos y Plan en la cola | Sí | "Vas por el 83% en Comida" |
-| `PRESUPUESTO_100` | Evento de Gastos y Plan en la cola | Sí | "Presupuesto de Comida agotado" |
-| `AVISO` | `POST /v1/notificaciones` con `tipo: "AVISO"` | Opcional | Título y mensaje libres (avisos generales) |
-| `GENERAL` | `POST` sin `tipo` | Opcional | Título y mensaje libres |
+Todos los textos van en voseo. Cada notificación puede traer `ruta` (pantalla del frontend a la que lleva al tocarla).
 
-El `POST` acepta cualquier `tipo`; los que el frontend muestra con ícono propio se acuerdan con su dueño.
+| `tipo` | Grupo | Origen | Texto (ejemplo) |
+|---|---|---|---|
+| `PRESUPUESTO_80` | Avance | Evento de Gastos y Plan en la cola | "Vas por el 83 % en Comida" |
+| `PRESUPUESTO_100` | Urgencia | Evento de Gastos y Plan (porcentaje = 100) | "Presupuesto de Comida agotado" |
+| `PRESUPUESTO_100` | Urgencia | Evento de Gastos y Plan (porcentaje > 100) | "Te estás pasando del presupuesto" / "¿Querés ampliarlo? Con cuidado, ¡que no se vuelva costumbre!" |
+| `BIENVENIDA` | Bienvenida | La primera vez que el usuario abre la app (primera llamada a `negotiate` o a la lista) | "¡Bienvenido a EstudiAmbre!" |
+| `RECOMENDACION` | Recomendación | Tarea diaria, medianoche de Costa Rica | Uno de 31 consejos; orden aleatorio por usuario y mes, sin repetir en el mes |
+| `INACTIVIDAD` | Push | Tarea diaria: 1 día, 1 semana o 1 mes sin abrir la app (una vez por nivel y por racha) | "¡Recordá entrar a registrar tus gastos!" |
+| `EVENTO` | Push | Tarea diaria en la fecha del evento, o a mano | "¡GTA VI por fin se estrenó!" |
+| `EVENTO_TEC` | Push | Solo a mano (demo) | "Entrada a clases" |
+| `PRECIO` | Precios | Evento `PRECIO_CAMBIO` en la cola (lo publicaría Precios) | "¡Bajó el precio de Arroz 1 kg!" |
+| `AVISO` / `GENERAL` | — | `POST /v1/notificaciones` | Título y mensaje libres |
+
+Eventos del catálogo (`Dominio/Catalogo.cs`): `entrada-tec` (sin fecha), `gta-vi` (19/11/2026), `juegos-del-hambre` (20/11/2026, *Amanecer en la cosecha*), `black-friday` (27/11/2026), `avengers-doomsday` (17/12/2026, estreno en Latinoamérica).
+
+### Evento de precio (contrato propuesto para Precios)
+
+```json
+{ "tipo": "PRECIO_CAMBIO", "producto": "Arroz 1 kg", "tienda": "Palí",
+  "precioAnterior": 1450, "precioNuevo": 1290, "usuarioId": "opcional", "correlationId": "opcional" }
+```
+
+Sin `usuarioId` se envía a todos los usuarios conocidos. Va a la misma cola `eventos-presupuesto`.
+
+## Tareas programadas
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `POST` | `/v1/tareas/diarias` | Recomendación del día, avisos de inactividad y eventos de hoy. Idempotente: correrla dos veces el mismo día no duplica nada. Responde un resumen. |
+| `GET` | `/v1/tareas/eventos` | Catálogo de eventos. |
+| `POST` | `/v1/tareas/eventos/{codigo}` | Envía ese evento **ya** a todos (para la demo). Se puede repetir. 404 si el código no existe. |
+
+Estas rutas **no están en APIM** (no son para usuarios): se llaman directo al App Service con `X-Apim-Secret`. Fuera de Development responden 403 si no hay `APIM_SHARED_SECRET` configurado.
+
+Quién las dispara:
+1. **GitHub Actions** (`.github/workflows/tareas-diarias.yml`), todos los días a las 00:05 de Costa Rica. Como el plan F1 se duerme, esta llamada además lo despierta. Con *Run workflow* se puede correr a mano y, opcionalmente, mandar un evento.
+2. **Respaldo interno** (`TareasDiariasWorker`): mientras la app está despierta, cada 15 min revisa si ya corrieron las de hoy.
+
+Los usuarios se toman de la tabla `actividad` (una fila por usuario con la fecha de su última visita). Se llena sola cuando cada usuario abre la app.
+
+Demo a mano:
+
+```bash
+curl -X POST -H "X-Apim-Secret: $SECRETO" https://<tu-app>.azurewebsites.net/v1/tareas/eventos/gta-vi
+```
 
 ## Flujo completo (diagrama de secuencia)
 
@@ -198,6 +239,7 @@ En Development sin `CLIENT_CERT_THUMBPRINT` no se exige certificado y CORS queda
 | `VAPID_PRIVATE_KEY` | secret | — |
 | `VAPID_SUBJECT` | variable | `mailto:notificaciones@estudiambre.app` (contacto para los servicios de push) |
 | `PUSH_TABLE_NAME` | variable | `suscripcionespush` |
+| `ACTIVIDAD_TABLE_NAME` | variable | `actividad` (última visita de cada usuario; la crea sola) |
 | `APIM_SHARED_SECRET` | secret | — (si se define, toda llamada salvo `/health` y `/swagger` debe traer `X-Apim-Secret` con este valor; lo agrega APIM) |
 | `CLIENT_CERT_REQUIRED` | variable | `true`. Poner `false` solo en un plan F1/D1, que no soporta certificados de cliente |
 | `QUEUE_NAME` | variable | `eventos-presupuesto` |
@@ -205,7 +247,7 @@ En Development sin `CLIENT_CERT_THUMBPRINT` no se exige certificado y CORS queda
 | `SIGNALR_HUB` | variable | `notificaciones` |
 | `QUEUE_MAX_INTENTOS` | variable | `5` |
 
-Para el workflow (Environment `test` de GitHub): secret `AZURE_WEBAPP_PUBLISH_PROFILE` y variable `AZURE_WEBAPP_NAME`.
+Para los workflows (*Settings → Secrets and variables → Actions* del repo): secrets `AZURE_WEBAPP_PUBLISH_PROFILE` y `APIM_SHARED_SECRET`; variables `AZURE_WEBAPP_NAME` y `NOTIF_BASE_URL` (URL del App Service, sin `/` final).
 
 ## Checklist de Azure
 

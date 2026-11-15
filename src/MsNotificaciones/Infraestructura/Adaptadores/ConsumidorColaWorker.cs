@@ -71,10 +71,10 @@ public sealed class ConsumidorColaWorker(
     private async Task ProcesarAsync(QueueClient cola, QueueClient poison, QueueMessage mensaje, CancellationToken ct)
     {
         var texto = mensaje.Body.ToString();
-        EventoPresupuesto evento;
+        EventoLeido evento;
         try
         {
-            evento = LectorEventos.Leer(texto, servicio.AhoraMs());
+            evento = LectorEventos.LeerCualquiera(texto, servicio.AhoraMs());
         }
         catch (EventoInvalidoException ex)
         {
@@ -87,10 +87,19 @@ public sealed class ConsumidorColaWorker(
         using var _ = logger.BeginScope("correlationId:{correlationId}", evento.CorrelationId);
         try
         {
-            var n = await servicio.ProcesarEventoAsync(evento, mensaje.MessageId, ct);
+            if (evento.Presupuesto is { } presupuesto)
+            {
+                var n = await servicio.ProcesarEventoAsync(presupuesto, mensaje.MessageId, ct);
+                logger.LogInformation("Evento {Tipo} de {UsuarioId} procesado como notificación {Id}",
+                    presupuesto.Tipo, presupuesto.UsuarioId, n.Id);
+            }
+            else
+            {
+                var enviadas = await servicio.ProcesarEventoPrecioAsync(evento.Precio!, mensaje.MessageId, ct);
+                logger.LogInformation("Evento de precio de {Producto} enviado a {Cantidad} usuarios",
+                    evento.Precio!.Producto, enviadas);
+            }
             await cola.DeleteMessageAsync(mensaje.MessageId, mensaje.PopReceipt, ct);
-            logger.LogInformation("Evento {Tipo} de {UsuarioId} procesado como notificación {Id}",
-                evento.Tipo, evento.UsuarioId, n.Id);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

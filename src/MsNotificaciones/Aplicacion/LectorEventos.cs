@@ -4,19 +4,31 @@ using MsNotificaciones.Dominio;
 
 namespace MsNotificaciones.Aplicacion;
 
+/// <summary>Lo que trae un mensaje de la cola: un evento de presupuesto o uno de precio.</summary>
+public sealed record EventoLeido(EventoPresupuesto? Presupuesto, EventoPrecio? Precio)
+{
+    public string CorrelationId => Presupuesto?.CorrelationId ?? Precio!.CorrelationId;
+    public string Tipo => Presupuesto?.Tipo ?? TiposEvento.PrecioCambio;
+}
+
 /// <summary>
-/// Convierte el texto de un mensaje de la cola en un <see cref="EventoPresupuesto"/>.
-/// Acepta JSON plano (lo que publica el SDK de Java por defecto) y también JSON en Base64,
-/// por si el publicador codifica los mensajes.
+/// Convierte el texto de un mensaje de la cola en un evento. Acepta JSON plano (lo que publica el
+/// SDK de Java por defecto) y también JSON en Base64, por si el publicador codifica los mensajes.
 /// </summary>
 public static class LectorEventos
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private sealed record EventoCrudo(
-        string? UsuarioId, string? Tipo, string? Categoria, double? Porcentaje, long? Fecha, string? CorrelationId);
+        string? UsuarioId, string? Tipo, string? Categoria, double? Porcentaje, long? Fecha, string? CorrelationId,
+        string? Producto, string? Tienda, decimal? PrecioAnterior, decimal? PrecioNuevo);
 
-    public static EventoPresupuesto Leer(string texto, long ahoraMs)
+    /// <summary>Evento de presupuesto (Gastos y Plan). Cualquier otro tipo es inválido.</summary>
+    public static EventoPresupuesto Leer(string texto, long ahoraMs) =>
+        LeerCualquiera(texto, ahoraMs).Presupuesto
+        ?? throw new EventoInvalidoException("Se esperaba un evento de presupuesto.");
+
+    public static EventoLeido LeerCualquiera(string texto, long ahoraMs)
     {
         if (string.IsNullOrWhiteSpace(texto))
             throw new EventoInvalidoException("Mensaje vacío.");
@@ -34,24 +46,33 @@ public static class LectorEventos
         {
             throw new EventoInvalidoException("El mensaje no es JSON válido.", ex);
         }
-
         if (crudo is null) throw new EventoInvalidoException("Mensaje vacío.");
+
+        // Fechas en Epoch ms. Igual que el frontend: un valor menor a 1e11 se toma como segundos.
+        var fecha = crudo.Fecha is > 0 ? crudo.Fecha.Value : ahoraMs;
+        if (fecha < 100_000_000_000L) fecha *= 1000;
+        var correlationId = string.IsNullOrWhiteSpace(crudo.CorrelationId) ? Guid.NewGuid().ToString() : crudo.CorrelationId;
+
+        if (crudo.Tipo == TiposEvento.PrecioCambio)
+        {
+            if (string.IsNullOrWhiteSpace(crudo.Producto)) throw new EventoInvalidoException("Falta producto.");
+            if (crudo.PrecioAnterior is not > 0 || crudo.PrecioNuevo is not > 0)
+                throw new EventoInvalidoException("Faltan precioAnterior y precioNuevo (mayores que 0).");
+            if (crudo.PrecioAnterior == crudo.PrecioNuevo) throw new EventoInvalidoException("El precio no cambió.");
+            return new EventoLeido(null, new EventoPrecio(
+                string.IsNullOrWhiteSpace(crudo.UsuarioId) ? null : crudo.UsuarioId,
+                crudo.Producto.Trim(), crudo.Tienda?.Trim(), crudo.PrecioAnterior.Value, crudo.PrecioNuevo.Value,
+                fecha, correlationId));
+        }
+
         if (string.IsNullOrWhiteSpace(crudo.UsuarioId)) throw new EventoInvalidoException("Falta usuarioId.");
         if (string.IsNullOrWhiteSpace(crudo.Categoria)) throw new EventoInvalidoException("Falta categoria.");
         if (crudo.Tipo is null || !TiposEvento.EsConocido(crudo.Tipo))
             throw new EventoInvalidoException($"Tipo desconocido: '{crudo.Tipo}'.");
         if (crudo.Porcentaje is null or < 0) throw new EventoInvalidoException("Falta porcentaje o es negativo.");
 
-        // Fechas en Epoch ms. Igual que el frontend: un valor menor a 1e11 se toma como segundos.
-        var fecha = crudo.Fecha is > 0 ? crudo.Fecha.Value : ahoraMs;
-        if (fecha < 100_000_000_000L) fecha *= 1000;
-
-        var correlationId = string.IsNullOrWhiteSpace(crudo.CorrelationId)
-            ? Guid.NewGuid().ToString()
-            : crudo.CorrelationId;
-
-        return new EventoPresupuesto(
-            crudo.UsuarioId, crudo.Tipo, crudo.Categoria.Trim(), crudo.Porcentaje.Value, fecha, correlationId);
+        return new EventoLeido(new EventoPresupuesto(
+            crudo.UsuarioId, crudo.Tipo, crudo.Categoria.Trim(), crudo.Porcentaje.Value, fecha, correlationId), null);
     }
 
     private static string DecodificarBase64(string texto)

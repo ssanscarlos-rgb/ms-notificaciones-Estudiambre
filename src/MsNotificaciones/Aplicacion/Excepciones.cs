@@ -6,6 +6,10 @@ public sealed class SolicitudInvalidaException(string message) : Exception(messa
 /// <summary>Mensaje de la cola que no se puede interpretar. Va a la cola de mensajes fallidos.</summary>
 public sealed class EventoInvalidoException(string message, Exception? inner = null) : Exception(message, inner);
 
+/// <summary>Código de evento que no está en el catálogo. Se responde 404.</summary>
+public sealed class EventoNoEncontradoException(string codigo)
+    : Exception($"No existe el evento '{codigo}'. Ver GET /v1/tareas/eventos.");
+
 /// <summary>Web Push no está configurado (faltan claves VAPID). Se responde 503.</summary>
 public sealed class PushNoDisponibleException()
     : Exception("Las notificaciones push no están configuradas.");

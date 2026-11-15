@@ -1,0 +1,48 @@
+# Dispara las notificaciones de medianoche (recomendación del día, inactividad y eventos con fecha).
+# Corre a las 00:05 de Costa Rica (06:05 UTC). Va directo al App Service, no por APIM, con el mismo
+# header secreto que pone APIM. Si el App Service (plan F1) estaba dormido, esta llamada lo despierta;
+# por eso reintenta y tiene un tiempo de espera largo.
+#
+# GitHub solo ejecuta los "schedule" del branch por defecto (dev): este archivo tiene que estar ahí.
+# GitHub puede atrasar los cron unos minutos (a veces más de 15) en horas de mucha carga; no importa,
+# las tareas son idempotentes y se pueden correr a mano con "Run workflow".
+#
+# Configuración (Settings → Secrets and variables → Actions):
+#   - Secret   APIM_SHARED_SECRET: el mismo valor del App setting y del Named value de APIM.
+#   - Variable NOTIF_BASE_URL:     URL del App Service, sin "/" al final (https://<app>.azurewebsites.net).
+name: tareas-diarias
+
+on:
+  schedule:
+    - cron: '5 6 * * *'
+  workflow_dispatch:
+    inputs:
+      evento:
+        description: 'Opcional: código de un evento para enviarlo YA a todos (entrada-tec, gta-vi, juegos-del-hambre, black-friday, avengers-doomsday). Vacío = tareas del día.'
+        required: false
+        default: ''
+
+jobs:
+  disparar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar al microservicio
+        env:
+          BASE: ${{ vars.NOTIF_BASE_URL }}
+          SECRETO: ${{ secrets.APIM_SHARED_SECRET }}
+          EVENTO: ${{ github.event.inputs.evento }}
+        run: |
+          if [ -z "$BASE" ] || [ -z "$SECRETO" ]; then
+            echo "::error::Falta la variable NOTIF_BASE_URL o el secret APIM_SHARED_SECRET"; exit 1
+          fi
+          if [ -n "$EVENTO" ]; then
+            case "$EVENTO" in *[!a-z0-9-]*) echo "::error::Código de evento inválido"; exit 1;; esac
+            URL="$BASE/v1/tareas/eventos/$EVENTO"
+          else
+            URL="$BASE/v1/tareas/diarias"
+          fi
+          # Despertar la app (F1) antes de la llamada real.
+          curl -s -o /dev/null --max-time 120 "$BASE/health" || true
+          curl -sS --fail-with-body --retry 4 --retry-delay 20 --retry-all-errors --max-time 120 \
+            -X POST -H "X-Apim-Secret: $SECRETO" -H "X-Correlation-Id: cron-${{ github.run_id }}" "$URL"
+          echo

@@ -21,6 +21,7 @@ public sealed class ManejoErroresMiddleware(RequestDelegate next, ILogger<Manejo
             var (status, mensaje) = ex switch
             {
                 SolicitudInvalidaException e => (400, e.Message),
+                EventoNoEncontradoException e => (404, e.Message),
                 BadHttpRequestException e => (e.StatusCode, "Solicitud inválida: revisá el formato del body y de los parámetros."),
                 TiempoRealNoDisponibleException e => (503, e.Message),
                 PushNoDisponibleException e => (503, e.Message),

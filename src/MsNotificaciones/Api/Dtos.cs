@@ -10,10 +10,11 @@ namespace MsNotificaciones.Api;
 /// </summary>
 public sealed record NotificacionDto(
     string Id, string Tipo, string Titulo, string Mensaje, bool Leida, long Fecha,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Categoria)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Categoria,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Ruta)
 {
     public static NotificacionDto Desde(Notificacion n) =>
-        new(n.Id, n.Tipo, n.Titulo, n.Mensaje, n.Leida, n.Fecha, n.Categoria);
+        new(n.Id, n.Tipo, n.Titulo, n.Mensaje, n.Leida, n.Fecha, n.Categoria, n.Ruta);
 }
 
 public sealed record CrearNotificacionRequest(string? Tipo, string? Titulo, string? Mensaje, string? Categoria);

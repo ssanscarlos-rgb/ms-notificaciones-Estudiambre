@@ -19,6 +19,8 @@ builder.Logging.AddJsonConsole(o =>
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<NotificacionService>();
+builder.Services.AddSingleton<TareasService>();
+builder.Services.AddHostedService<TareasDiariasWorker>();
 builder.Services.AddInfraestructura(builder.Configuration, builder.Environment);
 builder.Services.AddDocumentacion();
 
@@ -47,6 +49,7 @@ app.UseDocumentacion();
 app.MapGet("/health", () => Results.Ok(new { status = "UP", servicio = "ms-notificaciones" }))
     .WithTags("Salud");
 app.MapNotificaciones();
+app.MapTareas();
 
 app.Run();
 

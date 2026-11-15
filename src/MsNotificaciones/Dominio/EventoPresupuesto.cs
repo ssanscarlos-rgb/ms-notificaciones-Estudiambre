@@ -13,10 +13,25 @@ public sealed record EventoPresupuesto(
     long Fecha,
     string CorrelationId);
 
+/// <summary>
+/// Evento de cambio de precio que publicaría el microservicio de Precios en la misma cola:
+/// <c>{tipo: "PRECIO_CAMBIO", producto, tienda?, precioAnterior, precioNuevo, usuarioId?, fecha?, correlationId?}</c>.
+/// Sin <c>usuarioId</c> va a todos los usuarios.
+/// </summary>
+public sealed record EventoPrecio(
+    string? UsuarioId,
+    string Producto,
+    string? Tienda,
+    decimal PrecioAnterior,
+    decimal PrecioNuevo,
+    long Fecha,
+    string CorrelationId);
+
 public static class TiposEvento
 {
     public const string Presupuesto80 = "PRESUPUESTO_80";
     public const string Presupuesto100 = "PRESUPUESTO_100";
+    public const string PrecioCambio = "PRECIO_CAMBIO";
 
     public static bool EsConocido(string tipo) => tipo is Presupuesto80 or Presupuesto100;
 }

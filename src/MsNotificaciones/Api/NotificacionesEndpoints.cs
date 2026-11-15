@@ -62,6 +62,8 @@ public static class NotificacionesEndpoints
         [FromQuery] int? page, [FromQuery] int? size, [FromQuery] bool? leida, CancellationToken ct)
     {
         // ?leida=false → solo sin leer (filtro "Sin leer"); los totales cuentan solo esas.
+        // Abrir la campana (primera página) cuenta como actividad; la primera vez trae la bienvenida.
+        if ((page ?? 0) == 0) await servicio.RegistrarActividadAsync(ctx.UsuarioId(), ct);
         var pagina = await servicio.ListarAsync(ctx.UsuarioId(), page ?? 0, size ?? 10, leida, ct);
         return Results.Ok(pagina.Map(NotificacionDto.Desde));
     }
@@ -94,6 +96,7 @@ public static class NotificacionesEndpoints
 
     private static async Task<IResult> Negociar(HttpContext ctx, NotificacionService servicio, CancellationToken ct)
     {
+        await servicio.RegistrarActividadAsync(ctx.UsuarioId(), ct);
         var r = await servicio.NegociarAsync(ctx.UsuarioId(), ct);
         return Results.Ok(new NegociacionDto(r.Url, r.AccessToken));
     }

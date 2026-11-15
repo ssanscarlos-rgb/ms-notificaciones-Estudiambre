@@ -351,6 +351,27 @@
               }
             }
           ]
+        },
+        {
+          "name": "Tareas directo sin secreto → 403",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{directUrl}}/tareas/diarias",
+            "description": "Llamada directa al App Service. Como no trae el header secreto que agrega APIM (X-Apim-Secret), el microservicio responde 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: las tareas no se pueden disparar sin el secreto', () => pm.response.to.have.status(403));",
+                  "pm.test('Formato de error', () => { const j = pm.response.json(); pm.expect(j).to.have.keys('status','message','correlationId'); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

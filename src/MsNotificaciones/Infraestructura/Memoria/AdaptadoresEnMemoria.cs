@@ -50,6 +50,42 @@ public sealed class RepositorioEnMemoria : INotificacionRepositorio
     }
 }
 
+/// <summary>Actividad de usuarios para desarrollo local.</summary>
+public sealed class ActividadEnMemoria : IActividadRepositorio
+{
+    private readonly Lock _lock = new();
+    private readonly Dictionary<string, ActividadUsuario> _datos = [];
+
+    public Task<bool> RegistrarAsync(string usuarioId, long ahoraMs, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            var nuevo = !_datos.ContainsKey(usuarioId);
+            _datos[usuarioId] = new ActividadUsuario(usuarioId, ahoraMs, 0);
+            return Task.FromResult(nuevo);
+        }
+    }
+
+    public Task<IReadOnlyList<ActividadUsuario>> ListarAsync(CancellationToken ct)
+    {
+        lock (_lock) return Task.FromResult<IReadOnlyList<ActividadUsuario>>(_datos.Values.ToList());
+    }
+
+    public Task MarcarNivelInactividadAsync(string usuarioId, int nivel, CancellationToken ct)
+    {
+        lock (_lock)
+            if (_datos.TryGetValue(usuarioId, out var a)) _datos[usuarioId] = a with { NivelInactividad = nivel };
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Solo para pruebas locales: simula que el usuario dejó de entrar hace un tiempo.</summary>
+    public void Retroceder(string usuarioId, long ultimaActividadMs)
+    {
+        lock (_lock)
+            if (_datos.TryGetValue(usuarioId, out var a)) _datos[usuarioId] = a with { UltimaActividad = ultimaActividadMs };
+    }
+}
+
 /// <summary>Suscripciones push para desarrollo local.</summary>
 public sealed class SuscripcionesPushEnMemoria : ISuscripcionesPushRepositorio
 {

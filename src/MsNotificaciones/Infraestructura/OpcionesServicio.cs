@@ -26,6 +26,7 @@ public sealed record OpcionesServicio
     public string VapidSubject { get; init; } = "mailto:notificaciones@estudiambre.app";
 
     public string PushTableName { get; init; } = "suscripcionespush";
+    public string ActividadTableName { get; init; } = "actividad";
 
     /// <summary>Secreto que APIM manda en <c>X-Apim-Secret</c>. Si es null, no se exige.</summary>
     public string? ApimSharedSecret { get; init; }
@@ -46,6 +47,7 @@ public sealed record OpcionesServicio
         VapidPrivateKey = Valor(c, "VAPID_PRIVATE_KEY"),
         VapidSubject = Valor(c, "VAPID_SUBJECT") ?? "mailto:notificaciones@estudiambre.app",
         PushTableName = Valor(c, "PUSH_TABLE_NAME") ?? "suscripcionespush",
+        ActividadTableName = Valor(c, "ACTIVIDAD_TABLE_NAME") ?? "actividad",
         RequerirCertificadoCliente =!string.Equals(Valor(c, "CLIENT_CERT_REQUIRED"), "false", StringComparison.OrdinalIgnoreCase),
         MaxIntentos = int.TryParse(Valor(c, "QUEUE_MAX_INTENTOS"), out var n) && n > 0 ? n : 5,
     };

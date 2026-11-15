@@ -22,6 +22,8 @@ public static class ConfiguracionServicios
             services.AddSingleton<INotificacionRepositorio, TableStorageNotificacionRepositorio>();
             services.AddSingleton<ISuscripcionesPushRepositorio>(_ =>
                 new TableStorageSuscripcionesPush(new TableClient(storage, opciones.PushTableName)));
+            services.AddSingleton<IActividadRepositorio>(_ =>
+                new TableStorageActividad(new TableClient(storage, opciones.ActividadTableName)));
 
             // Mensajes en texto plano (por defecto en los SDK v12 de Java y .NET); el lector
             // también acepta Base64 por si el publicador lo cambia.
@@ -33,6 +35,8 @@ public static class ConfiguracionServicios
         {
             services.AddSingleton<INotificacionRepositorio, RepositorioEnMemoria>();
             services.AddSingleton<ISuscripcionesPushRepositorio, SuscripcionesPushEnMemoria>();
+            services.AddSingleton<ActividadEnMemoria>();
+            services.AddSingleton<IActividadRepositorio>(sp => sp.GetRequiredService<ActividadEnMemoria>());
         }
         else
         {
