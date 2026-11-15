@@ -20,10 +20,14 @@ public static class TareasEndpoints
         grupo.MapPost("/diarias", (TareasService t, CancellationToken ct) => t.EjecutarDiariasAsync(ct))
             .Produces<ResumenTareas>();
 
-        grupo.MapGet("/eventos", () => Eventos.Todos.Select(e => new
+        grupo.MapGet("/eventos", () => new
         {
-            e.Codigo, Fecha = e.Fecha?.ToString("yyyy-MM-dd"), e.Tipo, e.Texto.Titulo, e.Texto.Mensaje,
-        }));
+            eventos = Eventos.Todos.Select(e => new
+            {
+                e.Codigo, Fecha = e.Fecha?.ToString("yyyy-MM-dd"), e.Tipo, e.Texto.Titulo, e.Texto.Mensaje,
+            }),
+            demo = TareasService.CodigosDemo,
+        });
 
         grupo.MapPost("/eventos/{codigo}", async (string codigo, TareasService t, CancellationToken ct) =>
                 Results.Ok(new { codigo, enviadas = await t.EnviarEventoAhoraAsync(codigo, ct) }))

@@ -75,21 +75,40 @@ public sealed class TareasService(
         return resumen;
     }
 
+    /// <summary>Códigos de demo que no son eventos del catálogo.</summary>
+    public static readonly IReadOnlyList<string> CodigosDemo =
+        ["recomendacion", .. Inactividad.Niveles.Select(n => $"inactividad-{n.Dias}")];
+
     /// <summary>
-    /// Envía un evento del catálogo ya mismo a todos los usuarios (para la demo o para eventos sin
-    /// fecha, como la entrada a clases del TEC). No es idempotente: cada llamada envía de nuevo.
+    /// Envía ya mismo a todos los usuarios un evento del catálogo (para la demo o para eventos sin
+    /// fecha, como la entrada a clases del TEC), una recomendación al azar (<c>recomendacion</c>) o un
+    /// aviso de inactividad (<c>inactividad-1</c>, <c>-7</c>, <c>-30</c>). No es idempotente: cada
+    /// llamada envía de nuevo. No toca la recomendación del día ni el estado de inactividad real.
     /// </summary>
     public async Task<int> EnviarEventoAhoraAsync(string codigo, CancellationToken ct)
     {
-        var e = Eventos.Buscar(codigo) ?? throw new EventoNoEncontradoException(codigo);
+        var (tipo, texto) = Resolver(codigo);
         var usuarios = await actividad.ListarAsync(ct);
-        var id = $"evento-{e.Codigo}-{Guid.NewGuid().ToString("N")[..12]}";
+        var id = $"demo-{codigo}-{Guid.NewGuid().ToString("N")[..12]}";
         var enviadas = 0;
         foreach (var u in usuarios)
-            if (await notificaciones.EmitirSiNuevaAsync(Notificacion.Desde(e.Texto, id, u.UsuarioId, e.Tipo,
+        {
+            var contenido = texto ?? Recomendaciones.Todas[Random.Shared.Next(Recomendaciones.Todas.Count)];
+            if (await notificaciones.EmitirSiNuevaAsync(Notificacion.Desde(contenido, id, u.UsuarioId, tipo,
                     notificaciones.AhoraMs()), ct))
                 enviadas++;
-        logger.LogInformation("Evento {Codigo} enviado a mano a {Cantidad} usuarios", e.Codigo, enviadas);
+        }
+        logger.LogInformation("{Codigo} enviado a mano a {Cantidad} usuarios", codigo, enviadas);
         return enviadas;
+    }
+
+    // texto null = una recomendación al azar distinta por usuario.
+    private static (string Tipo, Contenido? Texto) Resolver(string codigo)
+    {
+        if (codigo == "recomendacion") return (TiposNotificacion.Recomendacion, null);
+        foreach (var (dias, texto) in Inactividad.Niveles)
+            if (codigo == $"inactividad-{dias}") return (TiposNotificacion.Inactividad, texto);
+        var e = Eventos.Buscar(codigo) ?? throw new EventoNoEncontradoException(codigo);
+        return (e.Tipo, e.Texto);
     }
 }

@@ -117,7 +117,7 @@ Sin `usuarioId` se envía a todos los usuarios conocidos. Va a la misma cola `ev
 |---|---|---|
 | `POST` | `/v1/tareas/diarias` | Recomendación del día, avisos de inactividad y eventos de hoy. Idempotente: correrla dos veces el mismo día no duplica nada. Responde un resumen. |
 | `GET` | `/v1/tareas/eventos` | Catálogo de eventos. |
-| `POST` | `/v1/tareas/eventos/{codigo}` | Envía ese evento **ya** a todos (para la demo). Se puede repetir. 404 si el código no existe. |
+| `POST` | `/v1/tareas/eventos/{codigo}` | Envía ese evento **ya** a todos (para la demo). Se puede repetir. 404 si el código no existe. También acepta `recomendacion` (una al azar), `inactividad-1`, `inactividad-7` e `inactividad-30`, solo para mostrarlos: no cambian la recomendación del día ni el estado real de inactividad. |
 
 Estas rutas **no están en APIM** (no son para usuarios): se llaman directo al App Service con `X-Apim-Secret`. Fuera de Development responden 403 si no hay `APIM_SHARED_SECRET` configurado.
 
