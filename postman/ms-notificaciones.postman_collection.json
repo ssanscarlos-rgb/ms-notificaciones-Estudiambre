@@ -273,6 +273,31 @@
               }
             }
           ]
+        },
+        {
+          "name": "10. Clave pública push (GET push/clave)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notificaciones/push/clave",
+            "description": "Clave pública VAPID con la que el navegador se suscribe a Web Push."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Clave P-256 sin comprimir en base64url (65 bytes = 87 caracteres)\", () => {",
+                  "  const k = pm.response.json().clavePublica;",
+                  "  pm.expect(k).to.match(/^[A-Za-z0-9_-]{87}$/);",
+                  "  pm.expect(k.startsWith(\"B\")).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

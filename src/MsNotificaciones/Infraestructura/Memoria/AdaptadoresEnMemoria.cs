@@ -50,6 +50,36 @@ public sealed class RepositorioEnMemoria : INotificacionRepositorio
     }
 }
 
+/// <summary>Suscripciones push para desarrollo local.</summary>
+public sealed class SuscripcionesPushEnMemoria : ISuscripcionesPushRepositorio
+{
+    private readonly Lock _lock = new();
+    private readonly List<SuscripcionPush> _datos = [];
+
+    public Task GuardarAsync(SuscripcionPush s, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            _datos.RemoveAll(x => x.UsuarioId == s.UsuarioId && x.Endpoint == s.Endpoint);
+            _datos.Add(s);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<SuscripcionPush>> ListarAsync(string usuarioId, CancellationToken ct)
+    {
+        lock (_lock)
+            return Task.FromResult<IReadOnlyList<SuscripcionPush>>(_datos.Where(x => x.UsuarioId == usuarioId).ToList());
+    }
+
+    public Task EliminarAsync(string usuarioId, string endpoint, CancellationToken ct)
+    {
+        lock (_lock)
+            _datos.RemoveAll(x => x.UsuarioId == usuarioId && x.Endpoint == endpoint);
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>Sin Azure SignalR configurado: solo deja constancia en el log.</summary>
 public sealed class NotificadorSoloLog(ILogger<NotificadorSoloLog> logger) : INotificadorTiempoReal
 {

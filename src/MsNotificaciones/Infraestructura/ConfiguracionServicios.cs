@@ -20,6 +20,8 @@ public static class ConfiguracionServicios
         {
             services.AddSingleton(_ => new TableClient(storage, opciones.TableName));
             services.AddSingleton<INotificacionRepositorio, TableStorageNotificacionRepositorio>();
+            services.AddSingleton<ISuscripcionesPushRepositorio>(_ =>
+                new TableStorageSuscripcionesPush(new TableClient(storage, opciones.PushTableName)));
 
             // Mensajes en texto plano (por defecto en los SDK v12 de Java y .NET); el lector
             // también acepta Base64 por si el publicador lo cambia.
@@ -30,6 +32,7 @@ public static class ConfiguracionServicios
         else if (entorno.IsDevelopment())
         {
             services.AddSingleton<INotificacionRepositorio, RepositorioEnMemoria>();
+            services.AddSingleton<ISuscripcionesPushRepositorio, SuscripcionesPushEnMemoria>();
         }
         else
         {
@@ -48,6 +51,15 @@ public static class ConfiguracionServicios
             services.AddSingleton<INotificadorTiempoReal, NotificadorSoloLog>();
         }
 
+        AddPush(services, entorno);
         return services;
+    }
+
+    /// <summary>Web Push: se desactiva solo si faltan las claves VAPID. No depende de paquetes de Azure.</summary>
+    public static void AddPush(IServiceCollection services, IHostEnvironment entorno)
+    {
+        services.AddHttpClient(WebPushEnviador.ClienteHttp, c => c.Timeout = TimeSpan.FromSeconds(10));
+        services.AddSingleton<IEnviadorPush, WebPushEnviador>();
+        services.AddSingleton(new OpcionesPush(PermitirEndpointsLocales: entorno.IsDevelopment()));
     }
 }

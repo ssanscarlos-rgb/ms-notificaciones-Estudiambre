@@ -28,6 +28,28 @@ public static class NotificacionesEndpoints
         grupo.MapDelete("/{id}", Eliminar)
             .Produces(204);
 
+        // Web Push: el navegador pide la clave pública VAPID, se suscribe y manda la suscripción.
+        grupo.MapGet("/push/clave", (NotificacionService s) => Results.Ok(new ClavePushDto(s.ClavePublicaPush())))
+            .Produces<ClavePushDto>()
+            .Produces<ErrorRespuesta>(503);
+
+        grupo.MapPost("/push/suscripciones", async (HttpContext ctx, NotificacionService s,
+                [FromBody] SuscripcionPushRequest body, CancellationToken ct) =>
+            {
+                await s.SuscribirPushAsync(ctx.UsuarioId(), body.Endpoint, body.Keys?.P256dh, body.Keys?.Auth, ct);
+                return Results.NoContent();
+            })
+            .Produces(204)
+            .Produces<ErrorRespuesta>(400);
+
+        grupo.MapPost("/push/suscripciones/baja", async (HttpContext ctx, NotificacionService s,
+                [FromBody] BajaPushRequest body, CancellationToken ct) =>
+            {
+                await s.DarDeBajaPushAsync(ctx.UsuarioId(), body.Endpoint, ct);
+                return Results.NoContent();
+            })
+            .Produces(204);
+
         grupo.MapPost("/negotiate", Negociar)
             .Produces<NegociacionDto>()
             .Produces<ErrorRespuesta>(503);

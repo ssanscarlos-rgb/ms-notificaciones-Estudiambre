@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MsNotificaciones.Dominio;
 
@@ -7,10 +8,18 @@ namespace MsNotificaciones.Aplicacion;
 public sealed class NotificacionService(
     INotificacionRepositorio repositorio,
     INotificadorTiempoReal notificador,
+    ISuscripcionesPushRepositorio suscripciones,
+    IEnviadorPush push,
+    OpcionesPush opcionesPush,
     TimeProvider tiempo,
     ILogger<NotificacionService> logger)
 {
     public const int TamanoMaximo = 50;
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     public bool TiempoRealDisponible => notificador.Disponible;
 
@@ -75,7 +84,28 @@ public sealed class NotificacionService(
         return notificador.NegociarAsync(usuarioId, ct);
     }
 
-    // La notificación ya quedó guardada: si el envío en vivo falla, el usuario la ve al
+    // ---- Web Push ----
+
+    public string ClavePublicaPush() =>
+        push is { Disponible: true, ClavePublica: { } clave } ? clave : throw new PushNoDisponibleException();
+
+    /// <summary>Guarda (o actualiza) la suscripción de este navegador para el usuario.</summary>
+    public Task SuscribirPushAsync(string usuarioId, string? endpoint, string? p256dh, string? auth, CancellationToken ct)
+    {
+        if (!push.Disponible) throw new PushNoDisponibleException();
+        ValidadorSuscripcion.Validar(endpoint, p256dh, auth, opcionesPush.PermitirEndpointsLocales);
+        return suscripciones.GuardarAsync(
+            new SuscripcionPush(usuarioId, endpoint!.Trim(), p256dh!.Trim().TrimEnd('='), auth!.Trim().TrimEnd('=')), ct);
+    }
+
+    /// <summary>Al desactivar los avisos o cerrar sesión. Idempotente.</summary>
+    public Task DarDeBajaPushAsync(string usuarioId, string? endpoint, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint)) throw new SolicitudInvalidaException("El campo 'endpoint' es obligatorio.");
+        return suscripciones.EliminarAsync(usuarioId, endpoint.Trim(), ct);
+    }
+
+    // La notificación ya quedó guardada: si el envío en vivo o el push fallan, el usuario la ve al
     // recargar la campana. Por eso no se propaga el error (ni se reintenta el mensaje).
     private async Task EmitirAsync(Notificacion notificacion, CancellationToken ct)
     {
@@ -86,6 +116,39 @@ public sealed class NotificacionService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "No se pudo enviar en vivo la notificación {Id}", notificacion.Id);
+        }
+
+        await EnviarPushAsync(notificacion, ct);
+    }
+
+    // Un push por cada navegador suscrito del usuario. Llega aunque la app esté cerrada.
+    private async Task EnviarPushAsync(Notificacion n, CancellationToken ct)
+    {
+        if (!push.Disponible) return;
+        try
+        {
+            var destinos = await suscripciones.ListarAsync(n.UsuarioId, ct);
+            if (destinos.Count == 0) return;
+
+            var payload = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                n.Id, n.Tipo, n.Titulo, n.Mensaje, n.Categoria, n.Fecha,
+            }, Json);
+
+            foreach (var s in destinos)
+            {
+                var resultado = await push.EnviarAsync(s, payload, ct);
+                if (resultado == ResultadoPush.Expirada)
+                {
+                    await suscripciones.EliminarAsync(s.UsuarioId, s.Endpoint, ct);
+                    logger.LogInformation("Suscripción push expirada; se elimina");
+                }
+            }
+            logger.LogInformation("Push de la notificación {Id} enviado a {Cantidad} navegador(es)", n.Id, destinos.Count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo enviar el push de la notificación {Id}", n.Id);
         }
     }
 }

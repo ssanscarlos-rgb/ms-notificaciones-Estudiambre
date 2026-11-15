@@ -35,6 +35,38 @@ public interface INotificadorTiempoReal
 
 public sealed record Negociacion(string Url, string AccessToken);
 
+/// <summary>Puerto de persistencia de suscripciones push. Adaptador real: Table Storage.</summary>
+public interface ISuscripcionesPushRepositorio
+{
+    /// <summary>Alta o actualización (misma suscripción = mismo endpoint).</summary>
+    Task GuardarAsync(SuscripcionPush suscripcion, CancellationToken ct);
+    Task<IReadOnlyList<SuscripcionPush>> ListarAsync(string usuarioId, CancellationToken ct);
+    Task EliminarAsync(string usuarioId, string endpoint, CancellationToken ct);
+}
+
+/// <summary>Puerto de envío Web Push (cifrado RFC 8291 + firma VAPID RFC 8292).</summary>
+public interface IEnviadorPush
+{
+    /// <summary><c>false</c> si no hay claves VAPID configuradas.</summary>
+    bool Disponible { get; }
+
+    /// <summary>Clave pública VAPID (base64url) que el navegador usa al suscribirse.</summary>
+    string? ClavePublica { get; }
+
+    Task<ResultadoPush> EnviarAsync(SuscripcionPush suscripcion, byte[] payload, CancellationToken ct);
+}
+
+public enum ResultadoPush
+{
+    Enviado,
+    /// <summary>El servicio de push respondió 404/410: la suscripción ya no existe y se borra.</summary>
+    Expirada,
+    Fallido,
+}
+
+/// <param name="PermitirEndpointsLocales">Solo en Development: acepta endpoints http://localhost para pruebas.</param>
+public sealed record OpcionesPush(bool PermitirEndpointsLocales);
+
 /// <summary>Formato de paginación del curso: página base 0.</summary>
 public sealed record Pagina<T>(IReadOnlyList<T> Content, int Page, int Size, long TotalElements, int TotalPages)
 {

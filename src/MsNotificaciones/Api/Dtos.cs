@@ -23,3 +23,9 @@ public sealed record CrearNotificacionRequest(string? Tipo, string? Titulo, stri
 public sealed record MarcarLeidaRequest(bool? Leida);
 
 public sealed record NegociacionDto(string Url, string AccessToken);
+
+/// <summary>Lo que devuelve <c>PushSubscription.toJSON()</c> en el navegador.</summary>
+public sealed record SuscripcionPushRequest(string? Endpoint, ClavesPushRequest? Keys);
+public sealed record ClavesPushRequest(string? P256dh, string? Auth);
+public sealed record BajaPushRequest(string? Endpoint);
+public sealed record ClavePushDto(string ClavePublica);

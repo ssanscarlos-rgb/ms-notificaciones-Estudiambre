@@ -23,6 +23,9 @@ Todos bajo `/v1`, con `Authorization: Bearer <Google JWT>` (APIM valida la firma
 | POST | `/notificaciones` | Body `{tipo?, titulo, mensaje, categoria?}` → 201 con la notificación. También la envía en vivo (útil para Postman) |
 | PATCH | `/notificaciones/{id}` | Body `{"leida": true}` → 200 con la notificación. Otro campo → 400. De otro usuario → 404 |
 | DELETE | `/notificaciones/{id}` | 204 siempre (idempotente: si no existe o es de otro usuario, no se borra nada y no se revela si existe) |
+| GET | `/notificaciones/push/clave` | `{clavePublica}`: clave pública VAPID para que el navegador se suscriba. 503 si no hay claves |
+| POST | `/notificaciones/push/suscripciones` | Body = `PushSubscription.toJSON()` (`{endpoint, keys:{p256dh, auth}}`) → 204. Endpoint que no sea de un servicio de push conocido → 400 |
+| POST | `/notificaciones/push/suscripciones/baja` | Body `{endpoint}` → 204 (idempotente) |
 | POST | `/notificaciones/negotiate` | `{url, accessToken}` para conectarse a Azure SignalR. 503 si no hay SignalR configurado |
 | GET | `/health`, `/swagger` | Sin autenticación ni certificado |
 
@@ -55,6 +58,28 @@ Cola `eventos-presupuesto` en la misma Storage Account. Mensaje en **JSON plano*
 3. El token dura 1 hora: si la conexión se cierra después de eso, volver a negociar.
 
 `tools/cliente-signalr.html` hace exactamente esto, para probar sin el frontend.
+
+## Notificaciones push (Web Push, con la app cerrada)
+
+SignalR solo llega con la app abierta. Para avisar con la app **cerrada** se usa Web Push, el estándar de los navegadores:
+
+1. **Suscripción.** Al activar los avisos en Perfil, el frontend registra un *service worker* (`public/sw.js`), pide `GET push/clave` y el navegador crea una suscripción ligada a esa clave. La suscripción (`endpoint` del servicio de push del navegador + claves `p256dh` y `auth`) se guarda con `POST push/suscripciones` en la tabla `suscripcionespush` (`PartitionKey` = `sub`, `RowKey` = SHA-256 del endpoint).
+2. **Envío.** Cada vez que se emite una notificación (de la cola o del `POST`), además de SignalR se envía un push a cada suscripción del usuario (`WebPushEnviador`):
+   - **Cifrado RFC 8291 (`aes128gcm`)**: ECDH P-256 efímero con la clave del navegador + HKDF + AES-128-GCM. El servicio de push (Google, Mozilla, Apple) solo ve bytes cifrados; únicamente ese navegador puede leerlos.
+   - **Firma VAPID RFC 8292**: JWT ES256 firmado con la clave privada del servidor. El servicio de push solo acepta mensajes de quien tenga la clave privada que corresponde a la pública con que se suscribió el navegador.
+   - Implementado con la criptografía de .NET (`ECDiffieHellman`, `HKDF`, `AesGcm`, `ECDsa`), sin librerías externas.
+3. **Recepción.** El navegador despierta al service worker, que muestra el aviso (o nada, si la app está a la vista, porque ya avisó SignalR). Al tocarlo abre el Plan en la categoría.
+4. **Limpieza.** Si el servicio de push responde 404/410 (el usuario quitó el permiso o cerró sesión), la suscripción se borra.
+
+Seguridad: el servicio hace POST al `endpoint` que manda el navegador, así que solo se aceptan dominios de servicios de push reales (`fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com`, `*.push.apple.com`). Si no, alguien podría usarlo para llamar direcciones internas (SSRF). Al cerrar sesión, el frontend anula la suscripción del navegador para que los avisos de esa cuenta no le lleguen a quien lo use después.
+
+Claves VAPID (una vez; la privada es secreta y va solo en el App Service):
+```bash
+cd /tmp && openssl ecparam -name prime256v1 -genkey -noout -out vapid.pem
+echo "VAPID_PUBLIC_KEY=$(openssl ec -in vapid.pem -pubout -outform DER 2>/dev/null | tail -c 65 | base64 | tr '+/' '-_' | tr -d '=\n')"
+echo "VAPID_PRIVATE_KEY=$(openssl ec -in vapid.pem -outform DER 2>/dev/null | head -c 39 | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
+rm vapid.pem
+```
 
 ## Tipos de notificación
 
@@ -169,6 +194,10 @@ En Development sin `CLIENT_CERT_THUMBPRINT` no se exige certificado y CORS queda
 | `STORAGE_CONNECTION_STRING` | secret | — (obligatoria fuera de Development) |
 | `AZURE_SIGNALR_CONNECTION_STRING` | secret | — (sin ella, `negotiate` responde 503) |
 | `CLIENT_CERT_THUMBPRINT` | secret | — (SHA-1; con o sin `:`) |
+| `VAPID_PUBLIC_KEY` | variable | — (sin ella y la privada, el push queda desactivado; lo demás funciona) |
+| `VAPID_PRIVATE_KEY` | secret | — |
+| `VAPID_SUBJECT` | variable | `mailto:notificaciones@estudiambre.app` (contacto para los servicios de push) |
+| `PUSH_TABLE_NAME` | variable | `suscripcionespush` |
 | `APIM_SHARED_SECRET` | secret | — (si se define, toda llamada salvo `/health` y `/swagger` debe traer `X-Apim-Secret` con este valor; lo agrega APIM) |
 | `CLIENT_CERT_REQUIRED` | variable | `true`. Poner `false` solo en un plan F1/D1, que no soporta certificados de cliente |
 | `QUEUE_NAME` | variable | `eventos-presupuesto` |

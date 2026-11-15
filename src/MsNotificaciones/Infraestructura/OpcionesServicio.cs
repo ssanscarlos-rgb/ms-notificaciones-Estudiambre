@@ -18,6 +18,15 @@ public sealed record OpcionesServicio
     /// </summary>
     public bool RequerirCertificadoCliente { get; init; } = true;
 
+    /// <summary>Claves VAPID de Web Push (base64url). Sin ellas, el push queda desactivado.</summary>
+    public string? VapidPublicKey { get; init; }
+    public string? VapidPrivateKey { get; init; }
+
+    /// <summary>Contacto del servidor para los servicios de push (<c>mailto:</c> o <c>https:</c>).</summary>
+    public string VapidSubject { get; init; } = "mailto:notificaciones@estudiambre.app";
+
+    public string PushTableName { get; init; } = "suscripcionespush";
+
     /// <summary>Secreto que APIM manda en <c>X-Apim-Secret</c>. Si es null, no se exige.</summary>
     public string? ApimSharedSecret { get; init; }
 
@@ -33,6 +42,10 @@ public sealed record OpcionesServicio
         SignalRHub = Valor(c, "SIGNALR_HUB") ?? "notificaciones",
         ClientCertThumbprint = Valor(c, "CLIENT_CERT_THUMBPRINT"),
         ApimSharedSecret = Valor(c, "APIM_SHARED_SECRET"),
+        VapidPublicKey = Valor(c, "VAPID_PUBLIC_KEY"),
+        VapidPrivateKey = Valor(c, "VAPID_PRIVATE_KEY"),
+        VapidSubject = Valor(c, "VAPID_SUBJECT") ?? "mailto:notificaciones@estudiambre.app",
+        PushTableName = Valor(c, "PUSH_TABLE_NAME") ?? "suscripcionespush",
         RequerirCertificadoCliente =!string.Equals(Valor(c, "CLIENT_CERT_REQUIRED"), "false", StringComparison.OrdinalIgnoreCase),
         MaxIntentos = int.TryParse(Valor(c, "QUEUE_MAX_INTENTOS"), out var n) && n > 0 ? n : 5,
     };

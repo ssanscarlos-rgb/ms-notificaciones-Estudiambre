@@ -23,10 +23,11 @@ public sealed class ManejoErroresMiddleware(RequestDelegate next, ILogger<Manejo
                 SolicitudInvalidaException e => (400, e.Message),
                 BadHttpRequestException e => (e.StatusCode, "Solicitud inválida: revisá el formato del body y de los parámetros."),
                 TiempoRealNoDisponibleException e => (503, e.Message),
+                PushNoDisponibleException e => (503, e.Message),
                 _ => (500, "Error interno del servidor."),
             };
 
-            if (status >= 500 && ex is not TiempoRealNoDisponibleException)
+            if (status >= 500 && ex is not (TiempoRealNoDisponibleException or PushNoDisponibleException))
                 logger.LogError(ex, "Error no controlado");
             else
                 logger.LogInformation("Solicitud rechazada ({Status}): {Motivo}", status, ex.Message);
